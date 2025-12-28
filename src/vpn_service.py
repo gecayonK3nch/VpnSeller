@@ -23,6 +23,21 @@ class VpnService:
         self.h3 = settings.AMNEZIA_H3
         self.h4 = settings.AMNEZIA_H4
 
+    def check_awg_installed(self) -> bool:
+        try:
+            subprocess.run(["awg", "--version"], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def check_interface(self) -> bool:
+        try:
+            # Check if interface exists
+            subprocess.run(["ip", "link", "show", self.interface], capture_output=True, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
     def _run_command(self, command: list) -> str:
         try:
             result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -34,7 +49,6 @@ class VpnService:
     def generate_keys(self):
         """Generates private and public keys."""
         private_key = self._run_command(["awg", "genkey"])
-        public_key = self._run_command(["awg", "pubkey"], input=private_key.encode()) # This is wrong, input needs to be passed to stdin
         
         # Correct way to pipe in python subprocess
         proc = subprocess.Popen(["awg", "pubkey"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -78,12 +92,27 @@ class VpnService:
         ]
         self._run_command(cmd)
 
+    def restore_peers(self, peers: list):
+        """Restores peers from database to the interface."""
+        # peers is a list of dicts/objects with public_key and ip_address
+        if not self.check_interface():
+            logger.warning(f"Interface {self.interface} not found. Cannot restore peers.")
+            return
+
+        logger.info(f"Restoring {len(peers)} peers...")
+        for peer in peers:
+            try:
+                self.add_peer(peer['public_key'], peer['ip_address'])
+            except Exception as e:
+                logger.error(f"Failed to restore peer {peer['public_key']}: {e}")
+
     def generate_client_config(self, private_key: str, client_ip: str, server_pubkey: str) -> str:
         """Generates the AmneziaWG config file content."""
         return f"""[Interface]
 PrivateKey = {private_key}
 Address = {client_ip}/32
-DNS = 8.8.8.8
+DNS = {settings.VPN_DNS}
+MTU = 1280
 Jc = {self.jc}
 Jmin = {self.jmin}
 Jmax = {self.jmax}
@@ -96,13 +125,15 @@ H4 = {self.h4}
 
 [Peer]
 PublicKey = {server_pubkey}
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = {self.server_host}:{self.server_port}
 PersistentKeepalive = 25
 """
 
     def get_server_pubkey(self) -> str:
         """Retrieves the server's public key."""
+        if not self.check_interface():
+             raise Exception(f"Interface {self.interface} does not exist or is down.")
         # awg show <interface> public-key
         return self._run_command(["awg", "show", self.interface, "public-key"])
 

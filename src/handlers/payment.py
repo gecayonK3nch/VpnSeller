@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 from aiogram.types import LabeledPrice, PreCheckoutQuery
-from src.database import get_user, update_subscription, add_referral_count, reset_referral_count, save_key, get_user_key
+from src.database import get_user, update_subscription, add_referral_count, reset_referral_count, save_key, get_user_key, increment_max_devices, get_all_used_ips
 from src.vpn_service import vpn_service
 from src.keyboards import buy_sub_kb, main_menu_kb
 from config import settings
@@ -12,6 +12,23 @@ logger = logging.getLogger(__name__)
 @router.callback_query(F.data == "buy_sub")
 async def cb_buy_sub(callback: types.CallbackQuery):
     await callback.message.edit_text("Выберите тариф:", reply_markup=buy_sub_kb())
+
+@router.callback_query(F.data == "buy_slot")
+async def cb_buy_slot(callback: types.CallbackQuery):
+    price = 100 # 100 RUB per slot
+    title = "Дополнительный слот"
+    description = "Дополнительное устройство для VPN"
+    payload = "buy_slot"
+    
+    await callback.message.answer_invoice(
+        title=title,
+        description=description,
+        payload=payload,
+        provider_token=settings.PAYMENT_TOKEN,
+        currency="RUB",
+        prices=[LabeledPrice(label=title, amount=price * 100)],
+        start_parameter="create_invoice_slot"
+    )
 
 @router.callback_query(F.data.startswith("buy_"))
 async def cb_process_buy(callback: types.CallbackQuery):
@@ -58,6 +75,11 @@ async def process_successful_payment(message: types.Message):
     payload = payment_info.invoice_payload
     telegram_id = message.from_user.id
     
+    if payload == "buy_slot":
+        await increment_max_devices(telegram_id)
+        await message.answer("✅ Слот успешно куплен! Теперь вы можете добавить еще одно устройство.", reply_markup=main_menu_kb())
+        return
+    
     days = 0
     if payload == "sub_30":
         days = 30
@@ -78,18 +100,9 @@ async def process_successful_payment(message: types.Message):
             # Generate new key
             priv, pub = vpn_service.generate_keys()
             
-            # Get all used IPs to find next free one
-            # In a real app, you'd query the DB for all used IPs
-            # For now, we rely on a simple logic or DB query
-            # Let's assume we need to implement get_all_ips in DB
-            # For simplicity in this snippet, we'll just generate one based on ID (risky for collisions if not careful)
-            # Better:
-            # ip = vpn_service.get_next_ip(used_ips)
-            
-            # Simplified IP generation for MVP: 10.9.0.X where X = user_id + 2
-            # WARNING: This limits to 253 users. Production needs better IPAM.
-            last_octet = (user['id'] % 253) + 2
-            client_ip = f"10.9.0.{last_octet}"
+            # Proper IPAM
+            used_ips = await get_all_used_ips()
+            client_ip = vpn_service.get_next_ip(used_ips)
             
             server_pub = vpn_service.get_server_pubkey()
             

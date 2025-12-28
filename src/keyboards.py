@@ -20,18 +20,35 @@ def buy_sub_kb():
 def profile_kb(has_active_sub: bool):
     buttons = []
     if has_active_sub:
-        buttons.append([InlineKeyboardButton(text="🔑 Получить ключ", callback_data="get_key")])
+        buttons.append([InlineKeyboardButton(text="📱 Мои устройства", callback_data="my_devices")])
         buttons.append([InlineKeyboardButton(text="📖 Инструкция", callback_data="instruction")])
     
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def key_format_kb():
+def devices_kb(devices: list, can_add: bool):
+    buttons = []
+    for i, device in enumerate(devices):
+        # device is a Row object or dict, assuming it has 'id' and 'device_name'
+        name = device['device_name']
+        buttons.append([InlineKeyboardButton(text=f"📱 {name}", callback_data=f"device_{device['id']}")])
+    
+    if can_add:
+        buttons.append([InlineKeyboardButton(text="➕ Добавить устройство", callback_data="add_device")])
+    else:
+        buttons.append([InlineKeyboardButton(text="🔒 Купить слот (+1)", callback_data="buy_slot")])
+        
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="profile")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def device_actions_kb(device_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📄 Файлом", callback_data="key_file")],
-        [InlineKeyboardButton(text="📝 Текстом", callback_data="key_text")],
-        [InlineKeyboardButton(text="📱 QR-кодом", callback_data="key_qr")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="profile")]
+        [InlineKeyboardButton(text="📄 Файл", callback_data=f"key_file_{device_id}")],
+        [InlineKeyboardButton(text="📝 Текст", callback_data=f"key_text_{device_id}")],
+        [InlineKeyboardButton(text="📱 QR", callback_data=f"key_qr_{device_id}")],
+        [InlineKeyboardButton(text="🚀 Amnezia VPN", callback_data=f"key_amnezia_app_{device_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_device_{device_id}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="my_devices")]
     ])
 
 def back_kb():
@@ -43,5 +60,6 @@ def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton(text="➕ Выдать подписку", callback_data="admin_add_sub")],
+        [InlineKeyboardButton(text="❌ Отключить подписку", callback_data="admin_disable_sub")],
         [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")]
     ])

@@ -2,9 +2,10 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from config import settings
-from src.database import init_db
+from src.database import init_db, get_all_active_keys
 from src.handlers import user, admin, payment
 from src.scheduler import setup_scheduler
+from src.vpn_service import vpn_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +18,14 @@ async def main():
 
     # Initialize Database
     await init_db()
+
+    # Restore VPN peers
+    try:
+        logger.info("Restoring VPN peers...")
+        active_keys = await get_all_active_keys()
+        vpn_service.restore_peers(active_keys)
+    except Exception as e:
+        logger.error(f"Failed to restore peers: {e}")
 
     # Register Routers
     dp.include_router(user.router)

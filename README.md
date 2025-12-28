@@ -59,7 +59,7 @@ systemctl start amneziawg-quick@awg1
 
 3. **Запустите бота**:
    ```bash
-   python src/bot.py
+   python3 -m src.bot
    ```
 
 ## ⚙️ Администрирование
