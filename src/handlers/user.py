@@ -246,6 +246,8 @@ async def cb_key_amnezia_app(callback: types.CallbackQuery):
         # Construct JSON for Amnezia VPN
         # We need to embed the full config text into 'last_config'
         
+        logger.info(f"Generating Amnezia VPN config for device: {key_data['device_name']}")
+        
         awg_params = {
             "Jc": str(settings.AMNEZIA_JC),
             "Jmin": str(settings.AMNEZIA_JMIN),
@@ -259,16 +261,20 @@ async def cb_key_amnezia_app(callback: types.CallbackQuery):
         }
         
         # Extract DNS
-        dns_match = re.search(r"DNS\s*=\s*(.*)", config_content)
+        dns_match = re.search(r"DNS\s*=\s*(.+?)(?:\n|$)", config_content)
         dns_servers = []
         if dns_match:
-            dns_servers = [d.strip() for d in dns_match.group(1).split(',')]
+            dns_str = dns_match.group(1).strip()
+            # Handle comma-separated DNS servers
+            dns_servers = [d.strip() for d in dns_str.split(',') if d.strip()]
+        
+        logger.debug(f"Extracted DNS servers: {dns_servers}")
 
         last_config_obj = {
             "config": config_content,
             "hostName": settings.VPN_HOST,
             "port": str(settings.VPN_PORT),
-            "mtu": "1280",
+            "mtu": 1420,
             **awg_params
         }
 
@@ -304,11 +310,17 @@ async def cb_key_amnezia_app(callback: types.CallbackQuery):
         json_str = json.dumps(amnezia_json, separators=(',', ':'))
         json_bytes = json_str.encode('utf-8')
         
+        logger.debug(f"Amnezia JSON size before compression: {len(json_bytes)} bytes")
+        
         # Compress using zlib with Qt qCompress header (4 bytes big-endian length)
         compressed_data = struct.pack('>I', len(json_bytes)) + zlib.compress(json_bytes)
         
+        logger.debug(f"Compressed size: {len(compressed_data)} bytes")
+        
         # Base64 URL-safe encode (no padding)
         vpn_link = "vpn://" + base64.urlsafe_b64encode(compressed_data).decode('utf-8').rstrip('=')
+        
+        logger.info(f"Generated VPN link: {vpn_link[:50]}...")
         
         # Generate QR for the link
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -330,7 +342,8 @@ async def cb_key_amnezia_app(callback: types.CallbackQuery):
         await callback.message.answer(f"<code>{vpn_link}</code>", parse_mode="HTML")
         
     except Exception as e:
-        await callback.message.answer(f"Ошибка генерации конфига для Amnezia VPN: {e}")
+        logger.error(f"Failed to generate Amnezia VPN config: {e}", exc_info=True)
+        await callback.message.answer(f"❌ Ошибка генерации конфига для Amnezia VPN: {e}")
         
     await callback.answer()
 

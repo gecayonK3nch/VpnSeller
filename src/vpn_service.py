@@ -40,17 +40,17 @@ class VpnService:
 
     def _run_command(self, command: list) -> str:
         try:
+            logger.debug(f"Running command: {' '.join(command)}")
             result = subprocess.run(command, capture_output=True, text=True, check=True)
+            logger.debug(f"Command output: {result.stdout.strip()[:100]}")
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
             logger.error(f"Command failed: {e.cmd}. Error: {e.stderr}")
             raise Exception(f"VPN Command Error: {e.stderr}")
 
     def generate_keys(self):
-        """Generates private and public keys."""
         private_key = self._run_command(["awg", "genkey"])
         
-        # Correct way to pipe in python subprocess
         proc = subprocess.Popen(["awg", "pubkey"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         pub_out, pub_err = proc.communicate(input=private_key)
         
@@ -81,6 +81,7 @@ class VpnService:
             "peer", public_key,
             "allowed-ips", f"{allowed_ip}/32"
         ]
+        logger.info(f"Adding peer: {public_key[:10]}... with IP {allowed_ip}")
         self._run_command(cmd)
 
     def remove_peer(self, public_key: str):
@@ -90,6 +91,7 @@ class VpnService:
             "peer", public_key,
             "remove"
         ]
+        logger.info(f"Removing peer: {public_key[:10]}...")
         self._run_command(cmd)
 
     def restore_peers(self, peers: list):
@@ -102,9 +104,13 @@ class VpnService:
         logger.info(f"Restoring {len(peers)} peers...")
         for peer in peers:
             try:
-                self.add_peer(peer['public_key'], peer['ip_address'])
+                # Handle both dict and Row objects
+                public_key = peer['public_key'] if isinstance(peer, dict) else peer.public_key
+                ip_address = peer['ip_address'] if isinstance(peer, dict) else peer.ip_address
+                self.add_peer(public_key, ip_address)
             except Exception as e:
-                logger.error(f"Failed to restore peer {peer['public_key']}: {e}")
+                pub_key = peer['public_key'] if isinstance(peer, dict) else peer.public_key
+                logger.error(f"Failed to restore peer {pub_key}: {e}")
 
     def generate_client_config(self, private_key: str, client_ip: str, server_pubkey: str) -> str:
         """Generates the AmneziaWG config file content."""
@@ -112,7 +118,6 @@ class VpnService:
 PrivateKey = {private_key}
 Address = {client_ip}/32
 DNS = {settings.VPN_DNS}
-MTU = 1280
 Jc = {self.jc}
 Jmin = {self.jmin}
 Jmax = {self.jmax}
@@ -135,6 +140,8 @@ PersistentKeepalive = 25
         if not self.check_interface():
              raise Exception(f"Interface {self.interface} does not exist or is down.")
         # awg show <interface> public-key
-        return self._run_command(["awg", "show", self.interface, "public-key"])
+        pubkey = self._run_command(["awg", "show", self.interface, "public-key"])
+        logger.info(f"Retrieved server public key: {pubkey[:10]}...")
+        return pubkey
 
 vpn_service = VpnService()
